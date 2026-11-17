@@ -21,24 +21,33 @@ export function StagePlayer({
   const [size, setSize] = useState({ w: 480, h: 320 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const [count, setCount] = useState(5);
+  const langRef = useRef(lang);
+  const tRef = useRef(t);
+  const singerRef = useRef(song.singer_name);
+  const titleRef = useRef(song.song_title);
+  langRef.current = lang;
+  tRef.current = t;
+  singerRef.current = song.singer_name;
+  titleRef.current = song.song_title;
 
   useEffect(() => {
     const started = Date.now();
     setCount(5);
-    const text = t.announce(song.singer_name, song.song_title);
+    const activeLang = langRef.current;
+    const text = tRef.current.announce(singerRef.current, titleRef.current);
     const voice = apiJson<{ audio: string | null }>("/api/tts/announce", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, lang: activeLang }),
     })
       .then((r) => r.audio)
       .catch(() => null);
-    const handle = playShowOpener(text, lang, voice);
+    const handle = playShowOpener(text, activeLang, voice);
     const iv = setInterval(() => setCount(countdownRemaining(started, Date.now())), 250);
     return () => {
       clearInterval(iv);
       handle.stop();
     };
-  }, [song.id, song.singer_name, song.song_title, lang, t]);
+  }, [song.id]);
 
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
@@ -77,7 +86,16 @@ export function StagePlayer({
     }
   };
   const fullscreen = () => box.current?.requestFullscreen?.();
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  let isTop = false;
+  try {
+    isTop = typeof window !== "undefined" && window.self === window.top;
+  } catch {
+    isTop = false;
+  }
+  const originParam =
+    isTop && typeof window !== "undefined"
+      ? `&origin=${encodeURIComponent(window.location.origin)}`
+      : "";
 
   return (
     <div
@@ -136,9 +154,10 @@ export function StagePlayer({
         ) : (
           <iframe
             ref={frame}
-            className="absolute inset-0 size-full"
-            src={`https://www.youtube.com/embed/${song.video_id}?autoplay=1&enablejsapi=1&rel=0&origin=${encodeURIComponent(origin)}`}
-            allow="autoplay; encrypted-media; fullscreen"
+            className="absolute inset-0 size-full border-0"
+            src={`https://www.youtube.com/embed/${encodeURIComponent(song.video_id)}?autoplay=1&playsinline=1&enablejsapi=1&rel=0${originParam}`}
+            referrerPolicy="strict-origin-when-cross-origin"
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             allowFullScreen
             title={song.song_title}
             onLoad={(e) =>

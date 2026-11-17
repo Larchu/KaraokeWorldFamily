@@ -1,3 +1,6 @@
+const DJ_TOKEN_KEY = "pm-dj-token";
+const SINGER_TOKEN_KEY = "pm-singer-token";
+
 export class ApiError extends Error {
   status: number;
   code: string | undefined;
@@ -8,18 +11,81 @@ export class ApiError extends Error {
   }
 }
 
+function readStorage(key: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string | null): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (value) {
+      window.localStorage.setItem(key, value);
+      window.sessionStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
+    }
+  } catch {
+    /* ignore storage quota or private mode failures */
+  }
+}
+
+export function getDjToken(): string | null {
+  return readStorage(DJ_TOKEN_KEY);
+}
+
+export function setDjToken(token: string | null): void {
+  writeStorage(DJ_TOKEN_KEY, token);
+}
+
+export function getSingerToken(): string | null {
+  return readStorage(SINGER_TOKEN_KEY);
+}
+
+export function setSingerToken(token: string | null): void {
+  writeStorage(SINGER_TOKEN_KEY, token);
+}
+
 export async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const djToken = getDjToken();
+  const singerToken = getSingerToken();
+  const headers: Record<string, string> = {};
+  if (init?.body) headers["Content-Type"] = "application/json";
+  if (djToken) headers["Authorization"] = `Bearer ${djToken}`;
+  if (singerToken) headers["X-Singer-Token"] = singerToken;
+
   const res = await fetch(url, {
     ...init,
     credentials: "include",
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
+      ...headers,
+      ...(init?.headers as Record<string, string> | undefined),
     },
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    const code = typeof data["reason"] === "string" ? data["reason"] : typeof data["error"] === "string" ? data["error"] : undefined;
+    if (res.status === 401) {
+      if (
+        url.startsWith("/api/dj/") ||
+        url.startsWith("/api/applause/") ||
+        url.startsWith("/api/tts/")
+      ) {
+        setDjToken(null);
+      } else if (url.startsWith("/api/account") || url.startsWith("/api/favorites")) {
+        setSingerToken(null);
+      }
+    }
+    const code =
+      typeof data["reason"] === "string"
+        ? data["reason"]
+        : typeof data["error"] === "string"
+          ? data["error"]
+          : undefined;
     throw new ApiError(res.status, code ?? `HTTP ${res.status}`, code);
   }
   return data as T;

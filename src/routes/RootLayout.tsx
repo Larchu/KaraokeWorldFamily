@@ -67,7 +67,7 @@ export function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <Outlet />
-        <Toaster theme="dark" position="top-center" />
+        <Toaster theme="dark" position="bottom-right" />
       </I18nProvider>
     </QueryClientProvider>
   );

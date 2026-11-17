@@ -348,9 +348,11 @@ export function GuestPage() {
           {preview && (
             <div className="aspect-video">
               <iframe
-                className="size-full rounded-lg"
-                src={`https://www.youtube-nocookie.com/embed/${preview.videoId}?autoplay=1`}
-                allow="autoplay; encrypted-media"
+                className="size-full rounded-lg border-0"
+                src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(preview.videoId)}?autoplay=1&playsinline=1`}
+                referrerPolicy="strict-origin-when-cross-origin"
+                allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                allowFullScreen
                 title={preview.title}
               />
             </div>

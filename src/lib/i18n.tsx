@@ -12,7 +12,7 @@ const dict = {
     ssStep1: "Escanea el código QR",
     ssStep2: "Elige tu canción",
     ssStep3: "Cuando te llamen, ¡sube al escenario!",
-    ssStep4: "Inicia sesión para entrar en el ranking",
+    ssStep4: "Entra en el ranking de la noche",
     ssScan: "Escanea para empezar",
     djSearchNoResults: "Sin resultados",
     djPassword: "Contraseña",
@@ -66,11 +66,13 @@ const dict = {
     stagePause: "Pausar",
     stageResume: "Reproducir",
     stageRetry: "Reintentar vídeo",
+    stageAlternativeEmbed: "Probar modo alternativo",
+    stageOpenYoutube: "Abrir en YouTube",
     stageVideoError: "Este vídeo no se puede reproducir aquí. El DJ puede elegir otro.",
     stageLocal: "Reproductor en el DJ",
     stageExternal: "Pantalla del bar activa",
     stageLoading: "Conectando…",
-    stageVoice: "Brian · ElevenLabs",
+    stageVoice: "Voz del escenario",
     stageAudioFallback: "Voz del navegador",
     stageOpen: "Abrir pantalla del bar",
     account: "Mi cuenta",
@@ -177,8 +179,58 @@ const dict = {
     localSignInHint: "Inicio de sesión local (modo desarrollo sin Supabase Auth)",
     localDisplayNamePh: "Tu nombre de cantante",
     localSignInBtn: "Entrar con cuenta local",
-    leaderboardFormulaNote: "Fórmula: Puntos totales = Aplausos (0–100) + (Likes × 10). Solo las cuentas registradas entran en el ranking.",
+    leaderboardFormulaNote: "Fórmula: Puntos totales = Aplausos (0–100) + (Likes × 10). Los invitados sin cuenta también entran en el ranking de esta noche.",
     applausePointsShort: "Aplausos",
+    applauseErrIframeBlocked: "El acceso al micrófono está bloqueado dentro de esta vista integrada. Ábrelo en una pestaña nueva o revisa los permisos en Configuración.",
+    openDjNewTab: "Abrir DJ Desk en pestaña nueva",
+    settingsTitle: "Configuración y permisos",
+    settingsSubtitle: "Micrófono, audio del aplausómetro, pantalla del bar e idioma.",
+    settingsMicSection: "Micrófono y permisos",
+    settingsMicStatus: "Estado del permiso",
+    settingsMicGranted: "Permitido",
+    settingsMicPrompt: "Pendiente de solicitud",
+    settingsMicDenied: "Denegado en el navegador",
+    settingsMicIframeBlocked: "Bloqueado por marco integrado (iframe)",
+    settingsMicUnknown: "Sin comprobar",
+    settingsMicSelect: "Dispositivo de entrada",
+    settingsMicDefaultDevice: "Micrófono predeterminado del sistema",
+    settingsMicRequestBtn: "Permitir y probar micrófono",
+    settingsMicStopTestBtn: "Detener prueba",
+    settingsMicTestHint: "Nivel de entrada en directo",
+    settingsMicEcho: "Cancelación de eco",
+    settingsMicNoise: "Supresión de ruido",
+    settingsMicAgc: "Control automático de ganancia (AGC)",
+    settingsApplauseSection: "Aplausómetro y escenario",
+    settingsDurationLabel: "Duración de medición",
+    settingsSeconds: "seg",
+    settingsStageMode: "Usar pantalla externa del bar",
+    settingsStageVolume: "Volumen del escenario",
+    settingsVoiceFallback: "Usar voz del navegador si no hay voz de estudio",
+    settingsTestVoiceBtn: "Probar anuncio de voz",
+    settingsPrefsSection: "Idioma y accesibilidad",
+    settingsLanguage: "Idioma",
+    settingsReducedEffects: "Efectos visuales reducidos en escenario",
+    settingsResetBtn: "Restablecer valores",
+    settingsSaved: "Configuración guardada",
+    applauseCountdownTitle: "¡Preparaos para aplaudir!",
+    applauseCountdownSubtitle: "El aplausómetro arranca en",
+    applauseDjCountdown: "Cuenta atrás en el escenario… medición en",
+    applauseScanVotes: "Votos QR",
+    applauseFormulaLabel: "Cálculo: Aplausos + (Votos QR × 10)",
+    applauseEnergyLow: "Calentando",
+    applauseEnergyMid: "¡Buen aplauso!",
+    applauseEnergyHigh: "¡Gran ovación!",
+    applauseEnergyMax: "¡LOCURA TOTAL!",
+    applauseTimeRemaining: "Tiempo restante",
+    applausePeakShort: "Máx",
+    applausePointsUnit: "PUNTOS",
+    guestSingerBadge: "Invitado",
+    rankPosition: "Puesto",
+    rankNewBadge: "NUEVO",
+    roundEvaluatedTitle: "Ronda evaluada",
+    liveRankingTop: "Ranking de hoy · Top 5",
+    liveSyncActive: "En directo",
+    singerTotalTonight: "Total hoy",
   },
   de: {
     djCollapse: "Treffer einklappen",
@@ -189,7 +241,7 @@ const dict = {
     ssStep1: "QR-Code scannen",
     ssStep2: "Song aussuchen",
     ssStep3: "Wenn du aufgerufen wirst: ab auf die Bühne!",
-    ssStep4: "Anmelden, um in der Rangliste mitzumachen",
+    ssStep4: "Direkt ins heutige Tagesranking einsteigen",
     ssScan: "Scannen und loslegen",
     djSearchNoResults: "Keine Treffer",
     djPassword: "Passwort",
@@ -243,11 +295,13 @@ const dict = {
     stagePause: "Pausieren",
     stageResume: "Abspielen",
     stageRetry: "Video erneut laden",
+    stageAlternativeEmbed: "Alternativen Player testen",
+    stageOpenYoutube: "Auf YouTube öffnen",
     stageVideoError: "Dieses Video lässt sich hier nicht abspielen. Der DJ kann ein anderes auswählen.",
     stageLocal: "Player im DJ-Pult",
     stageExternal: "Bar-Bildschirm aktiv",
     stageLoading: "Verbinden…",
-    stageVoice: "Brian · ElevenLabs",
+    stageVoice: "Bühnenstimme",
     stageAudioFallback: "Browser-Stimme",
     stageOpen: "Bar-Bildschirm öffnen",
     account: "Mein Konto",
@@ -354,8 +408,58 @@ const dict = {
     localSignInHint: "Lokale Anmeldung (Entwicklungsmodus ohne Supabase Auth)",
     localDisplayNamePh: "Dein Sängername",
     localSignInBtn: "Mit lokalem Konto anmelden",
-    leaderboardFormulaNote: "Formel: Gesamtpunkte = Applaus-Score (0–100) + (Likes × 10). Nur Auftritte mit Benutzerkonto zählen in die Rangliste.",
+    leaderboardFormulaNote: "Formel: Gesamtpunkte = Applaus-Score (0–100) + (Likes × 10). Auch Gäste ohne Account erscheinen im Tagesranking.",
     applausePointsShort: "Applaus",
+    applauseErrIframeBlocked: "Der Mikrofonzugriff ist in dieser eingebetteten Ansicht blockiert. Öffne das DJ-Pult in einem neuen Tab oder prüfe die Freigabe in den Einstellungen.",
+    openDjNewTab: "DJ Desk in neuem Tab öffnen",
+    settingsTitle: "Einstellungen & Berechtigungen",
+    settingsSubtitle: "Mikrofonfreigabe, Applausometer, Bar-Bildschirm und Sprache.",
+    settingsMicSection: "Mikrofon & Berechtigungen",
+    settingsMicStatus: "Berechtigungsstatus",
+    settingsMicGranted: "Freigegeben",
+    settingsMicPrompt: "Noch nicht angefragt",
+    settingsMicDenied: "Im Browser blockiert",
+    settingsMicIframeBlocked: "Durch eingebetteten Rahmen (Iframe) blockiert",
+    settingsMicUnknown: "Ungeprüft",
+    settingsMicSelect: "Eingabegerät",
+    settingsMicDefaultDevice: "System-Standardmikrofon",
+    settingsMicRequestBtn: "Mikrofon freigeben & testen",
+    settingsMicStopTestBtn: "Test beenden",
+    settingsMicTestHint: "Live-Eingangspegel",
+    settingsMicEcho: "Echounterdrückung",
+    settingsMicNoise: "Rauschunterdrückung",
+    settingsMicAgc: "Automatische Verstärkung (AGC)",
+    settingsApplauseSection: "Applausometer & Bühne",
+    settingsDurationLabel: "Messdauer",
+    settingsSeconds: "Sek.",
+    settingsStageMode: "Externen Bar-Bildschirm aktivieren",
+    settingsStageVolume: "Bühnen-Lautstärke",
+    settingsVoiceFallback: "Browser-Stimme als Fallback nutzen",
+    settingsTestVoiceBtn: "Bühnenansage testen",
+    settingsPrefsSection: "Sprache & Barrierefreiheit",
+    settingsLanguage: "Sprache",
+    settingsReducedEffects: "Reduzierte Bühnen-Effekte",
+    settingsResetBtn: "Zurücksetzen",
+    settingsSaved: "Einstellungen gespeichert",
+    applauseCountdownTitle: "Macht euch bereit zum Jubeln!",
+    applauseCountdownSubtitle: "Der Applausometer startet in",
+    applauseDjCountdown: "Beamer-Countdown läuft… Messung startet in",
+    applauseScanVotes: "Scan-Votes",
+    applauseFormulaLabel: "Berechnung: Applaus + (Scan-Votes × 10)",
+    applauseEnergyLow: "Ruhig",
+    applauseEnergyMid: "Starker Applaus!",
+    applauseEnergyHigh: "Riesen-Jubel!",
+    applauseEnergyMax: "STANDING OVATION!",
+    applauseTimeRemaining: "Restzeit",
+    applausePeakShort: "Peak",
+    applausePointsUnit: "PUNKTE",
+    guestSingerBadge: "Gast",
+    rankPosition: "Platz",
+    rankNewBadge: "NEU",
+    roundEvaluatedTitle: "Runde ausgewertet",
+    liveRankingTop: "Tagesranking · Top 5",
+    liveSyncActive: "Live",
+    singerTotalTonight: "Heute gesamt",
   },
   en: {
     djCollapse: "Hide results",
@@ -366,7 +470,7 @@ const dict = {
     ssStep1: "Scan the QR code",
     ssStep2: "Pick your song",
     ssStep3: "When you are called, hit the stage!",
-    ssStep4: "Sign in to join the leaderboard",
+    ssStep4: "Climb tonight's live leaderboard",
     ssScan: "Scan to start",
     djSearchNoResults: "No results",
     djPassword: "Password",
@@ -420,11 +524,13 @@ const dict = {
     stagePause: "Pause",
     stageResume: "Play",
     stageRetry: "Retry video",
+    stageAlternativeEmbed: "Try alternative player",
+    stageOpenYoutube: "Open on YouTube",
     stageVideoError: "This video cannot play here. The DJ can choose another.",
     stageLocal: "Player at DJ desk",
     stageExternal: "Bar screen active",
     stageLoading: "Connecting…",
-    stageVoice: "Brian · ElevenLabs",
+    stageVoice: "Stage voice",
     stageAudioFallback: "Browser voice",
     stageOpen: "Open bar screen",
     account: "My account",
@@ -531,30 +637,154 @@ const dict = {
     localSignInHint: "Local sign-in (development mode without Supabase Auth)",
     localDisplayNamePh: "Your singer name",
     localSignInBtn: "Sign in with local account",
-    leaderboardFormulaNote: "Formula: Total Points = Applause Score (0–100) + (Likes × 10). Only signed-in singer accounts appear on the leaderboard.",
+    leaderboardFormulaNote: "Formula: Total Points = Applause Score (0–100) + (Likes × 10). Guest singers without an account also appear in tonight's ranking.",
     applausePointsShort: "Applause",
+    applauseErrIframeBlocked: "Microphone access is blocked inside this embedded frame. Open the DJ Desk in a new tab or check permissions in Settings.",
+    openDjNewTab: "Open DJ Desk in new tab",
+    settingsTitle: "Settings & Permissions",
+    settingsSubtitle: "Microphone access, applausometer options, bar screen, and language.",
+    settingsMicSection: "Microphone & Permissions",
+    settingsMicStatus: "Permission status",
+    settingsMicGranted: "Granted",
+    settingsMicPrompt: "Prompt required",
+    settingsMicDenied: "Denied in browser",
+    settingsMicIframeBlocked: "Blocked by embedded iframe",
+    settingsMicUnknown: "Not checked",
+    settingsMicSelect: "Input device",
+    settingsMicDefaultDevice: "System default microphone",
+    settingsMicRequestBtn: "Allow & test microphone",
+    settingsMicStopTestBtn: "Stop test",
+    settingsMicTestHint: "Live input level",
+    settingsMicEcho: "Echo cancellation",
+    settingsMicNoise: "Noise suppression",
+    settingsMicAgc: "Auto gain control (AGC)",
+    settingsApplauseSection: "Applausometer & Stage",
+    settingsDurationLabel: "Measurement duration",
+    settingsSeconds: "sec",
+    settingsStageMode: "Use external bar screen",
+    settingsStageVolume: "Stage volume",
+    settingsVoiceFallback: "Allow browser speech synthesis fallback",
+    settingsTestVoiceBtn: "Test voice announcement",
+    settingsPrefsSection: "Language & Accessibility",
+    settingsLanguage: "Language",
+    settingsReducedEffects: "Reduced visual stage effects",
+    settingsResetBtn: "Reset defaults",
+    settingsSaved: "Settings saved",
+    applauseCountdownTitle: "Get ready to cheer!",
+    applauseCountdownSubtitle: "Applausometer starts in",
+    applauseDjCountdown: "Projector countdown running… measuring in",
+    applauseScanVotes: "Scan-Votes",
+    applauseFormulaLabel: "Formula: Applause + (Scan-Votes × 10)",
+    applauseEnergyLow: "Warming up",
+    applauseEnergyMid: "Great applause!",
+    applauseEnergyHigh: "Huge cheer!",
+    applauseEnergyMax: "STANDING OVATION!",
+    applauseTimeRemaining: "Time left",
+    applausePeakShort: "Peak",
+    applausePointsUnit: "POINTS",
+    guestSingerBadge: "Guest",
+    rankPosition: "Rank",
+    rankNewBadge: "NEW",
+    roundEvaluatedTitle: "Round evaluated",
+    liveRankingTop: "Tonight's Ranking · Top 5",
+    liveSyncActive: "Live",
+    singerTotalTonight: "Tonight total",
   },
 };
 
 export type Dict = (typeof dict)["es"];
 
-const I18nCtx = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: Dict }>({
+const LANG_CHANNEL = "pm-lang-sync";
+export const DJ_ACTIVE_STORAGE_KEY = "pm-dj-active";
+
+const I18nCtx = createContext<{
+  lang: Lang;
+  setLang: (l: Lang, opts?: { skipRemote?: boolean }) => void;
+  t: Dict;
+}>({
   lang: "es",
   setLang: () => {},
   t: dict.es,
 });
 
+function isValidLang(v: unknown): v is Lang {
+  return v === "es" || v === "de" || v === "en";
+}
+
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("es");
+
   useEffect(() => {
-    const saved = localStorage.getItem("pm-lang") as Lang | null;
-    if (saved && saved in dict) setLangState(saved);
+    const saved = localStorage.getItem("pm-lang");
+    if (isValidLang(saved)) setLangState(saved);
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pm-lang" && isValidLang(e.newValue)) {
+        setLangState(e.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      bc = new BroadcastChannel(LANG_CHANNEL);
+      bc.onmessage = (e: MessageEvent) => {
+        const next = (e.data as { lang?: unknown } | null)?.lang;
+        if (isValidLang(next)) {
+          setLangState(next);
+          try {
+            localStorage.setItem("pm-lang", next);
+          } catch {
+            /* ignore */
+          }
+        }
+      };
+    }
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      bc?.close();
+    };
   }, []);
-  const setLang = (l: Lang) => {
+
+  const setLang = (l: Lang, opts?: { skipRemote?: boolean }) => {
     setLangState(l);
-    localStorage.setItem("pm-lang", l);
+    try {
+      localStorage.setItem("pm-lang", l);
+    } catch {
+      /* ignore */
+    }
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        const bc = new BroadcastChannel(LANG_CHANNEL);
+        bc.postMessage({ lang: l });
+        bc.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!opts?.skipRemote && typeof window !== "undefined") {
+      const djToken = sessionStorage.getItem("pm_dj_token");
+      const djHint = localStorage.getItem(DJ_ACTIVE_STORAGE_KEY) === "1";
+      if (djToken || djHint) {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (djToken) headers["Authorization"] = `Bearer ${djToken}`;
+        fetch("/api/dj/stage/command", {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify({ command: "lang", volume: 100, lang: l }),
+        }).catch(() => {});
+      }
+    }
   };
-  return <I18nCtx.Provider value={{ lang, setLang, t: dict[lang] as Dict }}>{children}</I18nCtx.Provider>;
+
+  return (
+    <I18nCtx.Provider value={{ lang, setLang, t: dict[lang] as Dict }}>
+      {children}
+    </I18nCtx.Provider>
+  );
 }
 
 export const useI18n = () => useContext(I18nCtx);
+

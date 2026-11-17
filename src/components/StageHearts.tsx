@@ -3,6 +3,7 @@ import { Heart, Star } from "lucide-react";
 import { apiJson } from "@/lib/api";
 import { playApplause } from "@/lib/applause";
 import { useI18n } from "@/lib/i18n";
+import { loadAppSettings } from "@/lib/settings";
 import {
   STAGE_HEARTS_PER_LIKE,
   STAGE_STARS_PER_LIKE,
@@ -90,6 +91,7 @@ function buildBurstParticles(burstId: number, nextId: () => number): Particle[] 
 }
 
 function prefersReducedMotion(): boolean {
+  if (loadAppSettings().reducedEffects) return true;
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

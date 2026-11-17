@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiJson } from "@/lib/api";
+import { apiJson, setSingerToken } from "@/lib/api";
 
 export interface AuthUser {
   id: string;
@@ -27,7 +27,8 @@ export function useAuthUser() {
   }, [refresh]);
 
   const signOut = useCallback(async () => {
-    await apiJson("/api/auth/logout", { method: "POST" });
+    await apiJson("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setSingerToken(null);
     setUser(null);
   }, []);
 

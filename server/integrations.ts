@@ -70,15 +70,22 @@ export async function searchYouTubeServer(
 
     const ids = items.map((i) => i.id.videoId).filter(Boolean);
     const durations = new Map<string, string>();
+    const unembeddable = new Set<string>();
     if (ids.length) {
-      const vp = new URLSearchParams({ part: "contentDetails", id: ids.join(","), key: apiKey });
+      const vp = new URLSearchParams({ part: "contentDetails,status", id: ids.join(","), key: apiKey });
       const vids = await fetchJson(`https://www.googleapis.com/youtube/v3/videos?${vp}`);
       for (const v of vids.items ?? []) {
         durations.set(v.id, formatIsoDuration(v.contentDetails?.duration ?? ""));
+        if (v.status?.embeddable === false) {
+          unembeddable.add(v.id);
+        }
       }
     }
 
-    const data: VideoResult[] = items.map((i) => ({
+    const embeddableItems = items.filter((i) => !unembeddable.has(i.id.videoId));
+    const finalItems = embeddableItems.length > 0 ? embeddableItems : items;
+
+    const data: VideoResult[] = finalItems.map((i) => ({
       videoId: i.id.videoId,
       title: decodeHtml(i.snippet.title),
       channelTitle: decodeHtml(i.snippet.channelTitle),
@@ -115,10 +122,14 @@ export async function suggestSongsServer(
     return { queries: [], error: "config" };
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: geminiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+  const ai = new GoogleGenAI({
+    apiKey: geminiKey,
+    httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+  });
+
+  const generateWithModel = (model: string) =>
+    ai.models.generateContent({
+      model,
       contents: text,
       config: {
         systemInstruction: AI_SYSTEM,
@@ -135,6 +146,20 @@ export async function suggestSongsServer(
         },
       },
     });
+
+  try {
+    let response;
+    try {
+      response = await generateWithModel("gemini-2.5-flash");
+    } catch (primaryErr) {
+      const status = (primaryErr as { status?: number })?.status;
+      if (status === 404) {
+        response = await generateWithModel("gemini-3-flash-preview");
+      } else {
+        throw primaryErr;
+      }
+    }
+
     const parsed = JSON.parse(response.text ?? "{}") as { queries?: unknown };
     const queries = Array.isArray(parsed.queries)
       ? parsed.queries.filter((q): q is string => typeof q === "string").slice(0, 4)
@@ -142,39 +167,62 @@ export async function suggestSongsServer(
     return { queries, error: null };
   } catch (err) {
     const status = (err as { status?: number })?.status;
-    console.error("[ai-suggest] Gemini failed:", err instanceof Error ? err.message : err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[ai-suggest] Gemini failed:", msg);
     if (status === 429) return { queries: [], error: "rate" };
+    if (status === 401 || status === 403 || msg.includes("API_KEY_INVALID")) {
+      return { queries: [], error: "config" };
+    }
     return { queries: [], error: "unavailable" };
   }
 }
 
+const FALLBACK_ELEVENLABS_VOICE_ID = "nPczCjzI2devNBz1zQrb";
+
+async function fetchElevenLabsTts(
+  key: string,
+  voiceId: string,
+  text: string,
+  lang?: "es" | "de" | "en",
+): Promise<Response> {
+  return fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        ...(lang ? { language_code: lang } : {}),
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.8,
+          style: 0.6,
+          use_speaker_boost: true,
+        },
+      }),
+    },
+  );
+}
+
 export async function announceTtsServer(
   text: string,
+  lang?: "es" | "de" | "en",
 ): Promise<{ audio: string | null; configured: boolean }> {
   const key = process.env["ELEVENLABS_API_KEY"]?.trim();
-  const voice = process.env["ELEVENLABS_VOICE_ID"]?.trim() || "nPczCjzI2devNBz1zQrb";
+  const voice = process.env["ELEVENLABS_VOICE_ID"]?.trim();
   if (!key || !voice) {
     return { audio: null, configured: false };
   }
 
   try {
-    const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`,
-      {
-        method: "POST",
-        headers: { "xi-api-key": key, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: {
-            stability: 0.4,
-            similarity_boost: 0.8,
-            style: 0.6,
-            use_speaker_boost: true,
-          },
-        }),
-      },
-    );
+    let res = await fetchElevenLabsTts(key, voice, text, lang);
+    if (res.status === 404 && voice !== FALLBACK_ELEVENLABS_VOICE_ID) {
+      console.warn(
+        `[tts] Configured ELEVENLABS_VOICE_ID "${voice}" returned 404; falling back to default voice ${FALLBACK_ELEVENLABS_VOICE_ID}.`,
+      );
+      res = await fetchElevenLabsTts(key, FALLBACK_ELEVENLABS_VOICE_ID, text, lang);
+    }
     if (!res.ok) {
       console.error(`[tts] ElevenLabs failed [${res.status}]: ${await res.text()}`);
       return { audio: null, configured: true };
@@ -186,3 +234,4 @@ export async function announceTtsServer(
     return { audio: null, configured: true };
   }
 }
+

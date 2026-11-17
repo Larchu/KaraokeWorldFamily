@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { apiJson } from "@/lib/api";
+import { apiJson, setSingerToken } from "@/lib/api";
 import { useAuthUser } from "@/hooks/use-auth-user";
 import { useI18n } from "@/lib/i18n";
 
@@ -53,13 +53,16 @@ function SignIn({ onSuccess }: { onSuccess: () => void }) {
   const submit = async () => {
     setBusy(true);
     try {
-      await apiJson("/api/auth/local-login", {
+      const res = await apiJson<{ ok: boolean; token?: string }>("/api/auth/local-login", {
         method: "POST",
         body: JSON.stringify({
           email: email.trim(),
           displayName: displayName.trim() || undefined,
         }),
       });
+      if (res.token) {
+        setSingerToken(res.token);
+      }
       if (displayName.trim()) {
         localStorage.setItem("pm-name", displayName.trim());
       }

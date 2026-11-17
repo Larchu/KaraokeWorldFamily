@@ -1,8 +1,9 @@
 /** Countdown and announcement both finish before the karaoke audio starts. */
 export const STAGE_COUNTDOWN_SECONDS = 5;
 
-/** Current performance Like-QR dimension in CSS pixels (must be 116x116). */
-export const STAGE_LIKE_QR_SIZE = 116;
+/** Large high-contrast Vote-QR dimension in CSS pixels for far-distance low-resolution beamers. */
+export const STAGE_LIKE_QR_SIZE = 220;
+export const STAGE_IDLE_QR_SIZE = 250;
 
 /** Exact swarm particles spawned per valid new like in normal motion mode. */
 export const STAGE_HEARTS_PER_LIKE = 40;

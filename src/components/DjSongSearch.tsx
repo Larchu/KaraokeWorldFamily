@@ -255,9 +255,11 @@ export function DjSongSearch({
                   </div>
                   {preview === v.videoId && (
                     <iframe
-                      className="mt-2 aspect-video w-full rounded-lg"
-                      src={`https://www.youtube-nocookie.com/embed/${v.videoId}?autoplay=1`}
-                      allow="autoplay; encrypted-media"
+                      className="mt-2 aspect-video w-full rounded-lg border-0"
+                      src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.videoId)}?autoplay=1&playsinline=1`}
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                      allowFullScreen
                       title={v.title}
                     />
                   )}

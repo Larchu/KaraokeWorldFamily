@@ -20,7 +20,8 @@ Lokale, vollständig reproduzierbare Full-Stack-Karaoke-Anwendung mit Gästewuns
 | `DJ_SESSION_SECRET` | Empfohlen | HMAC-Signaturschlüssel für `mh-dj` / `mh-singer` Cookies |
 | `YOUTUBE_API_KEY` | Optional | Serverseitige YouTube-Suche (`/api/youtube/search`). Ohne Schlüssel gibt die UI ehrlich den Konfigurationshinweis aus; direkte YouTube-Links/IDs bleiben jederzeit nutzbar |
 | `GEMINI_API_KEY` | Optional | Serverseitige KI-Songvorschläge (`gemini-2.5-flash` über `/api/ai/suggest`) |
-| `ELEVENLABS_API_KEY` | Optional | Server-Sprachausgabe (`Brian`) über `/api/tts/announce`; fällt lokal sauber auf Browser-`speechSynthesis` zurück |
+| `ELEVENLABS_API_KEY` | Optional | Serverseitige Bühnen-Ansagen über `/api/tts/announce`; fällt bei fehlendem Key sauber auf Browser-`speechSynthesis` zurück |
+| `ELEVENLABS_VOICE_ID` | Optional | Ziel-Stimmen-ID für ElevenLabs-Ansagen |
 
 > **Sicherheit:** Alle API-Schlüssel bleiben ausschließlich serverseitig (`/server/*`). Es werden niemals echte Geheimnisse ins Repository eingecheckt.
 

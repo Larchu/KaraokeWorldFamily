@@ -1,20 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiJson } from "@/lib/api";
 import {
-  APPLAUSE_DURATION_MS,
+  APPLAUSE_COUNTDOWN_MS,
   APPLAUSE_MIN_SAMPLES,
   computeApplauseScore,
-  computeRmsFromFloatSamples,
+  computeFrameEnergyFromFloatSamples,
+  extractFrequencyBands,
   normalizeRmsLevel,
   remainingApplauseSeconds,
-  smoothLevel,
+  remainingCountdownSeconds,
+  smoothLevelAsymmetric,
   type ApplauseStateSnapshot,
 } from "@/lib/applause-meter";
 
-export type RecorderPhase = "idle" | "preparing" | "measuring" | "saving";
+import {
+  buildAudioConstraints,
+  isEmbeddedIframe,
+  isMicrophoneAllowedByPolicy,
+  loadAppSettings,
+} from "@/lib/settings";
+
+export type RecorderPhase = "idle" | "preparing" | "countdown" | "measuring" | "saving";
 export type RecorderErrorCode =
   | "unsupported"
   | "permission"
+  | "iframe_blocked"
   | "no_mic"
   | "busy"
   | "unauthorized"
@@ -37,6 +47,8 @@ export function useApplauseRecorder(options?: {
   const [phase, setPhase] = useState<RecorderPhase>("idle");
   const [liveLevel, setLiveLevel] = useState(0);
   const [peakLevel, setPeakLevel] = useState(0);
+  const [liveBands, setLiveBands] = useState<number[]>([]);
+  const [countdownSec, setCountdownSec] = useState(5);
   const [remainingSec, setRemainingSec] = useState(10);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<RecorderErrorCode>(null);
@@ -74,10 +86,15 @@ export function useApplauseRecorder(options?: {
       return false;
     }
 
+    const appSettings = loadAppSettings();
+    const durationMs = appSettings.applauseDurationSec * 1000;
+    const durationSec = appSettings.applauseDurationSec;
+
     setErrorCode(null);
     setLiveLevel(0);
     setPeakLevel(0);
-    setRemainingSec(10);
+    setCountdownSec(Math.ceil(APPLAUSE_COUNTDOWN_MS / 1000));
+    setRemainingSec(durationSec);
     setActiveRequestId(requestId);
     setPhaseSync("preparing");
 
@@ -85,6 +102,8 @@ export function useApplauseRecorder(options?: {
     let audioCtx: AudioContext | null = null;
     let source: MediaStreamAudioSourceNode | null = null;
     let analyser: AnalyserNode | null = null;
+    let countdownTickTimer: ReturnType<typeof setInterval> | null = null;
+    let countdownEndTimer: ReturnType<typeof setTimeout> | null = null;
     let sampleTimer: ReturnType<typeof setInterval> | null = null;
     let finishTimer: ReturnType<typeof setTimeout> | null = null;
     let cleaned = false;
@@ -92,7 +111,24 @@ export function useApplauseRecorder(options?: {
     const measurementId = crypto.randomUUID();
     let startedOnServer = false;
 
+    let liveChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        liveChannel = new BroadcastChannel("pm-applause-live");
+      } catch {
+        liveChannel = null;
+      }
+    }
+
     const teardownMedia = () => {
+      if (countdownTickTimer) {
+        clearInterval(countdownTickTimer);
+        countdownTickTimer = null;
+      }
+      if (countdownEndTimer) {
+        clearTimeout(countdownEndTimer);
+        countdownEndTimer = null;
+      }
       if (sampleTimer) {
         clearInterval(sampleTimer);
         sampleTimer = null;
@@ -100,6 +136,14 @@ export function useApplauseRecorder(options?: {
       if (finishTimer) {
         clearTimeout(finishTimer);
         finishTimer = null;
+      }
+      if (liveChannel) {
+        try {
+          liveChannel.close();
+        } catch {
+          /* ignore */
+        }
+        liveChannel = null;
       }
       try {
         source?.disconnect();
@@ -137,6 +181,7 @@ export function useApplauseRecorder(options?: {
       setPhaseSync("idle");
       setActiveRequestId(null);
       setLiveLevel(0);
+      setLiveBands([]);
     };
 
     cleanupRef.current = () => {
@@ -146,14 +191,10 @@ export function useApplauseRecorder(options?: {
     try {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: false,
-          },
+          audio: buildAudioConstraints(appSettings),
         });
       } catch (err) {
-        // Retry with minimal constraint if specific audio processing flags are unsupported
+        // Retry with minimal constraint if specific deviceId or processing flags are unsupported
         const name = err instanceof Error ? err.name : "";
         if (name === "OverconstrainedError" || name === "TypeError") {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -177,13 +218,15 @@ export function useApplauseRecorder(options?: {
       source = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.15;
       source.connect(analyser);
 
-      // Verify microphone pipeline yields readable frames before starting the 10-second clock
+      // Verify microphone pipeline yields readable frames before starting the clock
       const timeDomain = new Float32Array(analyser.fftSize);
+      const freqDomain = new Uint8Array(analyser.frequencyBinCount);
       analyser.getFloatTimeDomainData(timeDomain);
 
-      // Start authoritative server measurement ONLY AFTER mic is live and ready
+      // Start authoritative server session in 5-second Beamer countdown phase
       const startRes = await apiJson<{ ok: boolean; state: ApplauseStateSnapshot }>(
         "/api/applause/start",
         {
@@ -191,106 +234,34 @@ export function useApplauseRecorder(options?: {
           body: JSON.stringify({
             requestId,
             measurementId,
-            durationMs: APPLAUSE_DURATION_MS,
+            durationMs,
+            countdownMs: APPLAUSE_COUNTDOWN_MS,
           }),
         },
       );
       startedOnServer = true;
-
-      const serverEndsAt = startRes.state.endsAt ?? Date.now() + APPLAUSE_DURATION_MS;
-      const localEndsAt = Date.now() + APPLAUSE_DURATION_MS;
-      setPhaseSync("measuring");
-
-      const rawSamples: number[] = [];
-      let smoothed = 0;
-      let peak = 0;
-      let seq = 0;
-      let inFlightLevel = false;
 
       audioTracks[0]!.onended = () => {
         setErrorCode("no_mic");
         void fullCancel("failed");
       };
 
-      // ~15 Hz frame sampling over exact 10-second window (NO raw audio stored/sent)
-      sampleTimer = setInterval(() => {
-        if (cleaned || !analyser) return;
-        analyser.getFloatTimeDomainData(timeDomain);
-        const rms = computeRmsFromFloatSamples(timeDomain);
-        const norm = normalizeRmsLevel(rms);
-        smoothed = smoothLevel(smoothed, norm, 0.35);
-        peak = Math.max(peak, norm);
-        rawSamples.push(norm);
+      const countdownEndsAt = startRes.state.countdownEndsAt ?? Date.now() + APPLAUSE_COUNTDOWN_MS;
+      const countdownWaitMs = Math.max(0, countdownEndsAt - Date.now());
+      setCountdownSec(remainingCountdownSeconds(countdownEndsAt, Date.now()));
+      setPhaseSync("countdown");
 
-        setLiveLevel(smoothed);
-        setPeakLevel(peak);
-        setRemainingSec(remainingApplauseSeconds(localEndsAt, Date.now()));
-
-        seq += 1;
-        if (!inFlightLevel) {
-          inFlightLevel = true;
-          apiJson("/api/applause/level", {
-            method: "POST",
-            body: JSON.stringify({
-              measurementId,
-              requestId,
-              seq,
-              level: smoothed,
-              peak,
-            }),
-          })
-            .catch((err) => {
-              if (err instanceof ApiError && err.status === 401) {
-                setErrorCode("unauthorized");
-                onUnauthRef.current?.();
-                void fullCancel("failed");
-              }
-            })
-            .finally(() => {
-              inFlightLevel = false;
-            });
-        }
-      }, 66);
-
-      finishTimer = setTimeout(async () => {
+      const beginLiveMeasurement = async () => {
         if (cleaned) return;
-        cleaned = true;
-        teardownMedia();
-        setPhaseSync("saving");
-
-        if (rawSamples.length < APPLAUSE_MIN_SAMPLES) {
-          setErrorCode("insufficient");
-          await apiJson("/api/applause/cancel", {
-            method: "POST",
-            body: JSON.stringify({ measurementId, requestId, reason: "failed" }),
-          }).catch(() => {});
-          setPhaseSync("idle");
-          setActiveRequestId(null);
-          return;
+        if (countdownTickTimer) {
+          clearInterval(countdownTickTimer);
+          countdownTickTimer = null;
         }
 
         try {
-          const completed = await apiJson<{
-            ok: boolean;
-            state: ApplauseStateSnapshot;
-            breakdown: ReturnType<typeof computeApplauseScore>;
-          }>("/api/applause/complete", {
+          await apiJson<{ ok: boolean; state: ApplauseStateSnapshot }>("/api/applause/begin", {
             method: "POST",
-            body: JSON.stringify({
-              measurementId,
-              requestId,
-              samples: rawSamples,
-            }),
-          });
-          setPhaseSync("idle");
-          setActiveRequestId(null);
-          setLiveLevel(0);
-          onCompletedRef.current?.({
-            requestId,
-            measurementId,
-            score: completed.state.score ?? completed.breakdown.score,
-            likes: completed.state.likes,
-            totalPoints: completed.state.totalPoints ?? completed.breakdown.score,
+            body: JSON.stringify({ measurementId, requestId }),
           });
         } catch (err) {
           if (err instanceof ApiError && err.status === 401) {
@@ -299,10 +270,143 @@ export function useApplauseRecorder(options?: {
           } else {
             setErrorCode("network");
           }
-          setPhaseSync("idle");
-          setActiveRequestId(null);
+          await fullCancel("failed");
+          return;
         }
-      }, Math.max(1000, serverEndsAt ? Math.min(APPLAUSE_DURATION_MS, Math.max(1000, localEndsAt - Date.now())) : APPLAUSE_DURATION_MS));
+
+        if (cleaned || !analyser) return;
+
+        const localEndsAt = Date.now() + durationMs;
+        setRemainingSec(durationSec);
+        setPhaseSync("measuring");
+
+        const rawSamples: number[] = [];
+        let smoothed = 0;
+        let peak = 0;
+        let seq = 0;
+        let inFlightLevel = false;
+        let unpushedPeakSinceSend = 0;
+
+        // ~30 Hz high-responsiveness frame sampling over measurement window (NO raw audio stored/sent)
+        sampleTimer = setInterval(() => {
+          if (cleaned || !analyser) return;
+          analyser.getFloatTimeDomainData(timeDomain);
+          analyser.getByteFrequencyData(freqDomain);
+          const { energy } = computeFrameEnergyFromFloatSamples(timeDomain);
+          const norm = normalizeRmsLevel(energy);
+          smoothed = smoothLevelAsymmetric(smoothed, norm, 0.9, 0.25);
+          peak = Math.max(peak, norm);
+          unpushedPeakSinceSend = Math.max(unpushedPeakSinceSend, smoothed);
+          rawSamples.push(norm);
+          const bands = extractFrequencyBands(freqDomain, 48, smoothed);
+
+          setLiveLevel(smoothed);
+          setPeakLevel(peak);
+          setLiveBands(bands);
+          setRemainingSec(remainingApplauseSeconds(localEndsAt, Date.now()));
+
+          seq += 1;
+          liveChannel?.postMessage({
+            type: "level",
+            measurementId,
+            requestId,
+            seq,
+            latestLevel: smoothed,
+            latestPeak: peak,
+            latestBands: bands,
+            updatedAt: Date.now(),
+          });
+
+          if (!inFlightLevel) {
+            inFlightLevel = true;
+            const levelToSend = Math.max(smoothed, unpushedPeakSinceSend * 0.95);
+            unpushedPeakSinceSend = 0;
+            apiJson("/api/applause/level", {
+              method: "POST",
+              body: JSON.stringify({
+                measurementId,
+                requestId,
+                seq,
+                level: levelToSend,
+                peak,
+                bands,
+              }),
+            })
+              .catch((err) => {
+                if (err instanceof ApiError && err.status === 401) {
+                  setErrorCode("unauthorized");
+                  onUnauthRef.current?.();
+                  void fullCancel("failed");
+                }
+              })
+              .finally(() => {
+                inFlightLevel = false;
+              });
+          }
+        }, 33);
+
+        finishTimer = setTimeout(async () => {
+          if (cleaned) return;
+          cleaned = true;
+          teardownMedia();
+          setPhaseSync("saving");
+
+          if (rawSamples.length < APPLAUSE_MIN_SAMPLES) {
+            setErrorCode("insufficient");
+            await apiJson("/api/applause/cancel", {
+              method: "POST",
+              body: JSON.stringify({ measurementId, requestId, reason: "failed" }),
+            }).catch(() => {});
+            setPhaseSync("idle");
+            setActiveRequestId(null);
+            return;
+          }
+
+          try {
+            const completed = await apiJson<{
+              ok: boolean;
+              state: ApplauseStateSnapshot;
+              breakdown: ReturnType<typeof computeApplauseScore>;
+            }>("/api/applause/complete", {
+              method: "POST",
+              body: JSON.stringify({
+                measurementId,
+                requestId,
+                samples: rawSamples,
+              }),
+            });
+            setPhaseSync("idle");
+            setActiveRequestId(null);
+            setLiveLevel(0);
+            setLiveBands([]);
+            onCompletedRef.current?.({
+              requestId,
+              measurementId,
+              score: completed.state.score ?? completed.breakdown.score,
+              likes: completed.state.likes,
+              totalPoints: completed.state.totalPoints ?? completed.breakdown.score,
+            });
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 401) {
+              setErrorCode("unauthorized");
+              onUnauthRef.current?.();
+            } else {
+              setErrorCode("network");
+            }
+            setPhaseSync("idle");
+            setActiveRequestId(null);
+          }
+        }, durationMs);
+      };
+
+      countdownTickTimer = setInterval(() => {
+        if (cleaned) return;
+        setCountdownSec(remainingCountdownSeconds(countdownEndsAt, Date.now()));
+      }, 100);
+
+      countdownEndTimer = setTimeout(() => {
+        void beginLiveMeasurement();
+      }, countdownWaitMs);
 
       return true;
     } catch (err) {
@@ -330,7 +434,8 @@ export function useApplauseRecorder(options?: {
 
       const name = err instanceof Error ? err.name : "";
       if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
-        setErrorCode("permission");
+        const policyBlocked = isMicrophoneAllowedByPolicy() === false || isEmbeddedIframe();
+        setErrorCode(policyBlocked ? "iframe_blocked" : "permission");
       } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
         setErrorCode("no_mic");
       } else {
@@ -344,6 +449,8 @@ export function useApplauseRecorder(options?: {
     phase,
     liveLevel,
     peakLevel,
+    liveBands,
+    countdownSec,
     remainingSec,
     activeRequestId,
     errorCode,

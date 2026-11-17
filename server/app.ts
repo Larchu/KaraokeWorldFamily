@@ -19,10 +19,15 @@ import {
   sendSseEvent,
 } from "./events.ts";
 import {
+  beginApplauseMeasurement,
+  broadcastNightLeaderboard,
   cancelApplauseMeasurement,
   completeApplauseMeasurement,
+  evaluateRoundAndLeaderboard,
+  fetchNightLeaderboard,
   getCurrentApplauseState,
   pushApplauseLevel,
+  refreshActiveApplauseLikes,
   startApplauseMeasurement,
 } from "./applause-service.ts";
 import {
@@ -60,7 +65,7 @@ export function createApiRouter(db: DbClient) {
       djConfigured: isDjConfigured(),
       youtubeConfigured: Boolean(process.env["YOUTUBE_API_KEY"]?.trim()),
       aiConfigured: Boolean(process.env["GEMINI_API_KEY"]?.trim()),
-      ttsConfigured: Boolean(process.env["ELEVENLABS_API_KEY"]?.trim()),
+      ttsConfigured: Boolean(process.env["ELEVENLABS_API_KEY"]?.trim() && process.env["ELEVENLABS_VOICE_ID"]?.trim()),
     });
   });
 
@@ -250,6 +255,8 @@ export function createApiRouter(db: DbClient) {
       if (!already) {
         broadcastPublicEvent("like_changed", { requestId: body.requestId, likes });
         broadcastStageEvent("like_changed", { requestId: body.requestId, likes });
+        void refreshActiveApplauseLikes(body.requestId, likes);
+        void broadcastNightLeaderboard(db, "like_changed", body.requestId);
       }
       res.json({ ok: true, already, likes });
     } catch (err) {
@@ -309,6 +316,8 @@ export function createApiRouter(db: DbClient) {
 
       broadcastPublicEvent("like_changed", { requestId: body.requestId, likes });
       broadcastStageEvent("like_changed", { requestId: body.requestId, likes });
+      void refreshActiveApplauseLikes(body.requestId, likes);
+      void broadcastNightLeaderboard(db, "like_changed", body.requestId);
       res.json({ ok: true, liked, likes });
     } catch (err) {
       next(err);
@@ -326,6 +335,7 @@ export function createApiRouter(db: DbClient) {
         singer_id: string;
         display_name: string;
         card_code: string;
+        is_guest: boolean;
         likes: string | number;
         applause_points: string | number;
         total_points: string | number;
@@ -334,9 +344,10 @@ export function createApiRouter(db: DbClient) {
 
       res.json({
         rows: result.rows.map((r) => ({
-          singer_id: r.singer_id,
+          singer_id: String(r.singer_id),
           display_name: r.display_name,
-          card_code: r.card_code,
+          card_code: r.card_code ?? "",
+          is_guest: Boolean(r.is_guest),
           likes: Number(r.likes),
           applause_points: Number(r.applause_points),
           total_points: Number(r.total_points),
@@ -420,15 +431,15 @@ export function createApiRouter(db: DbClient) {
         [userId],
       );
       const profile = profileRes.rows[0];
-      setSingerCookie(req, res, userId);
-      res.json({ ok: true, user: profile });
+      const token = setSingerCookie(req, res, userId);
+      res.json({ ok: true, user: profile, token });
     } catch (err) {
       next(err);
     }
   });
 
-  router.post("/auth/logout", (_req, res) => {
-    clearSingerCookie(res);
+  router.post("/auth/logout", (req, res) => {
+    clearSingerCookie(res, req);
     res.json({ ok: true });
   });
 
@@ -588,8 +599,8 @@ export function createApiRouter(db: DbClient) {
         res.status(check.reason === "config" ? 503 : 200).json({ ok: false, reason: check.reason });
         return;
       }
-      await startDjSession(db, req, res);
-      res.json({ ok: true });
+      const token = await startDjSession(db, req, res);
+      res.json({ ok: true, token });
     } catch (err) {
       next(err);
     }
@@ -613,6 +624,7 @@ export function createApiRouter(db: DbClient) {
           status: z.enum(["waiting", "next", "playing", "done", "skipped"]),
         })
         .parse(req.body);
+      const prevRows = body.status === "done" ? await fetchNightLeaderboard(db) : [];
       const result = await db.query<{ dj_set_status: { ok: boolean; reason?: string; advanced?: string } }>(
         `SELECT public.dj_set_status($1, $2) AS dj_set_status`,
         [body.id, body.status],
@@ -620,7 +632,14 @@ export function createApiRouter(db: DbClient) {
       const payload = result.rows[0]?.dj_set_status ?? { ok: false };
       broadcastPublicEvent("queue_changed", { reason: "status", id: body.id });
       broadcastStageEvent("queue_changed", { reason: "status", id: body.id });
-      res.json(payload);
+      let evaluation = null;
+      if (payload.ok && body.status === "done") {
+        const evalRes = await evaluateRoundAndLeaderboard(db, body.id, prevRows, "round_done");
+        evaluation = evalRes.evaluation;
+      } else if (payload.ok && body.status === "playing") {
+        await broadcastNightLeaderboard(db, "round_started", body.id);
+      }
+      res.json({ ...payload, evaluation });
     } catch (err) {
       next(err);
     }
@@ -657,16 +676,20 @@ export function createApiRouter(db: DbClient) {
   router.post("/dj/requests/complete-current", requireDj, async (req, res, next) => {
     try {
       const body = z.object({ id: z.string().uuid() }).parse(req.body);
+      const prevRows = await fetchNightLeaderboard(db);
       const result = await db.query<{ dj_complete_current: { ok: boolean; reason?: string; advanced?: string } }>(
         `SELECT public.dj_complete_current($1) AS dj_complete_current`,
         [body.id],
       );
       const payload = result.rows[0]?.dj_complete_current ?? { ok: false };
+      let evaluation = null;
       if (payload.ok) {
         broadcastPublicEvent("queue_changed", { reason: "completed", id: body.id });
         broadcastStageEvent("queue_changed", { reason: "completed", id: body.id });
+        const evalRes = await evaluateRoundAndLeaderboard(db, body.id, prevRows, "round_completed");
+        evaluation = evalRes.evaluation;
       }
-      res.json(payload);
+      res.json({ ...payload, evaluation });
     } catch (err) {
       next(err);
     }
@@ -723,7 +746,7 @@ export function createApiRouter(db: DbClient) {
   router.get("/dj/stage", requireDj, async (_req, res, next) => {
     try {
       const result = await db.query(
-        `SELECT paused, volume, revision, restart_revision, external FROM public.stage_control WHERE id = true LIMIT 1`,
+        `SELECT paused, volume, revision, restart_revision, external, lang FROM public.stage_control WHERE id = true LIMIT 1`,
       );
       res.json(result.rows[0] ?? defaultStageControl);
     } catch (err) {
@@ -735,13 +758,14 @@ export function createApiRouter(db: DbClient) {
     try {
       const body = z
         .object({
-          command: z.enum(["play", "pause", "restart", "volume", "external", "local"]),
+          command: z.enum(["play", "pause", "restart", "volume", "external", "local", "lang"]),
           volume: z.number().int().min(0).max(100).default(100),
+          lang: z.enum(["es", "de", "en"]).optional(),
         })
         .parse(req.body);
       const result = await db.query<{ dj_stage_command: Record<string, unknown> }>(
-        `SELECT public.dj_stage_command($1, $2) AS dj_stage_command`,
-        [body.command, body.volume],
+        `SELECT public.dj_stage_command($1, $2, $3) AS dj_stage_command`,
+        [body.command, body.volume, body.lang ?? null],
       );
       const nextState = result.rows[0]?.dj_stage_command ?? defaultStageControl;
       broadcastStageEvent("stage_control", nextState);
@@ -768,9 +792,29 @@ export function createApiRouter(db: DbClient) {
           requestId: z.string().uuid(),
           measurementId: z.string().uuid(),
           durationMs: z.number().int().min(1000).max(30000).optional(),
+          countdownMs: z.number().int().min(0).max(15000).optional(),
         })
         .parse(req.body);
       const result = await startApplauseMeasurement(db, body);
+      if (!result.ok) {
+        res.status(result.status).json({ ok: false, reason: result.reason });
+        return;
+      }
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/applause/begin", requireDj, async (req, res, next) => {
+    try {
+      const body = z
+        .object({
+          measurementId: z.string().uuid(),
+          requestId: z.string().uuid(),
+        })
+        .parse(req.body);
+      const result = await beginApplauseMeasurement(db, body);
       if (!result.ok) {
         res.status(result.status).json({ ok: false, reason: result.reason });
         return;
@@ -790,6 +834,7 @@ export function createApiRouter(db: DbClient) {
           seq: z.number().int().min(1),
           level: z.number().min(0).max(1),
           peak: z.number().min(0).max(1),
+          bands: z.array(z.number().min(0).max(1)).max(64).optional(),
         })
         .parse(req.body);
       const result = await pushApplauseLevel(db, body);
@@ -858,8 +903,13 @@ export function createApiRouter(db: DbClient) {
 
   router.post("/tts/announce", requireDj, async (req, res, next) => {
     try {
-      const body = z.object({ text: z.string().trim().min(1).max(400) }).parse(req.body);
-      const result = await announceTtsServer(body.text);
+      const body = z
+        .object({
+          text: z.string().trim().min(1).max(400),
+          lang: z.enum(["es", "de", "en"]).optional(),
+        })
+        .parse(req.body);
+      const result = await announceTtsServer(body.text, body.lang);
       res.json(result);
     } catch (err) {
       next(err);
@@ -878,7 +928,7 @@ export function createApiRouter(db: DbClient) {
       const unregister = registerSseClient(res, true);
       const [stageRes, applauseState] = await Promise.all([
         db.query(
-          `SELECT paused, volume, revision, restart_revision, external FROM public.stage_control WHERE id = true LIMIT 1`,
+          `SELECT paused, volume, revision, restart_revision, external, lang FROM public.stage_control WHERE id = true LIMIT 1`,
         ),
         getCurrentApplauseState(db),
       ]);

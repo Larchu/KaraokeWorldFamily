@@ -1,4 +1,5 @@
 import { isApplauseAudioSuppressed } from "./applause";
+import { loadAppSettings } from "./settings";
 
 /** Las-Vegas show opener synthesized in WebAudio + TTS announcement. */
 export function playShowOpener(
@@ -105,7 +106,7 @@ export function playShowOpener(
 
   const startAt = Date.now() + 600 + 2600;
   const browserVoice = () => {
-    if (stopped || isApplauseAudioSuppressed()) {
+    if (stopped || isApplauseAudioSuppressed() || !loadAppSettings().stageVoiceFallback) {
       finish();
       return;
     }

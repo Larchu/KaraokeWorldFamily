@@ -41,6 +41,8 @@ import {
   Award,
   Square,
   Heart,
+  Settings,
+  ExternalLink,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -50,13 +52,15 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { StagePlayer } from "@/components/StagePlayer";
 import { DjSongSearch } from "@/components/DjSongSearch";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { useQueue } from "@/hooks/use-queue";
 import { useStageControl } from "@/hooks/use-stage-control";
 import { useApplauseRecorder, type RecorderErrorCode } from "@/hooks/use-applause-recorder";
-import { ApiError, apiJson } from "@/lib/api";
+import { ApiError, apiJson, setDjToken } from "@/lib/api";
 import { setApplauseAudioSuppressed } from "@/lib/applause";
+import { computeSpectrumColumns } from "@/lib/applause-meter";
 import { LOGO_URL } from "@/lib/assets";
-import { useI18n } from "@/lib/i18n";
+import { DJ_ACTIVE_STORAGE_KEY, useI18n, type Lang } from "@/lib/i18n";
 import { playOrder, type SongRequest } from "@/lib/queue";
 import { performancePoints } from "@/lib/singer";
 
@@ -69,6 +73,12 @@ export function DjPage() {
       .then((r) => {
         setAuthed(r.ok);
         setDjConfigured(r.configured !== false);
+        try {
+          if (r.ok) localStorage.setItem(DJ_ACTIVE_STORAGE_KEY, "1");
+          else localStorage.removeItem(DJ_ACTIVE_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
       })
       .catch(() => setAuthed(false));
   }, []);
@@ -89,11 +99,17 @@ function Login({ djConfigured, onOk }: { djConfigured: boolean; onOk: () => void
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await apiJson<{ ok: boolean; reason?: string }>("/api/dj/login", {
+      const r = await apiJson<{ ok: boolean; token?: string; reason?: string }>("/api/dj/login", {
         method: "POST",
         body: JSON.stringify({ password: pw }),
       });
       if (r.ok) {
+        if (r.token) setDjToken(r.token);
+        try {
+          localStorage.setItem(DJ_ACTIVE_STORAGE_KEY, "1");
+        } catch {
+          /* ignore */
+        }
         onOk();
       } else {
         toast.error(r.reason === "config" ? t.errGeneric : t.djWrong);
@@ -148,6 +164,8 @@ function Login({ djConfigured, onOk }: { djConfigured: boolean; onOk: () => void
 
 function recorderErrorText(code: RecorderErrorCode, t: ReturnType<typeof useI18n>["t"]): string | null {
   switch (code) {
+    case "iframe_blocked":
+      return t.applauseErrIframeBlocked;
     case "permission":
       return t.applauseErrPermission;
     case "no_mic":
@@ -168,8 +186,9 @@ function recorderErrorText(code: RecorderErrorCode, t: ReturnType<typeof useI18n
 }
 
 function Desk({ onLogout }: { onLogout: () => void }) {
-  const { t } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const [externalStage, setExternalStage] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { rows, setRows, reload } = useQueue();
   const stageCtrl = useStageControl(true);
   const [stage, setStage] = useState<SongRequest | null>(null);
@@ -203,10 +222,13 @@ function Desk({ onLogout }: { onLogout: () => void }) {
     },
   });
 
-  // Pause synthetic stage audio during applause measurement
+  // Pause synthetic stage audio during applause countdown or measurement
   useEffect(() => {
     setApplauseAudioSuppressed(
-      recorder.phase === "measuring" || stageCtrl.applause.status === "measuring",
+      recorder.phase === "countdown" ||
+        recorder.phase === "measuring" ||
+        stageCtrl.applause.status === "countdown" ||
+        stageCtrl.applause.status === "measuring",
     );
     return () => setApplauseAudioSuppressed(false);
   }, [recorder.phase, stageCtrl.applause.status]);
@@ -381,7 +403,10 @@ function Desk({ onLogout }: { onLogout: () => void }) {
   }, [order, selected, stage, externalStage, act]);
 
   const guestUrl = typeof window !== "undefined" ? `${window.location.origin}/` : "";
-  const isMeasuring = recorder.phase !== "idle" || stageCtrl.applause.status === "measuring";
+  const isMeasuring =
+    recorder.phase !== "idle" ||
+    stageCtrl.applause.status === "countdown" ||
+    stageCtrl.applause.status === "measuring";
   const errMsg = recorderErrorText(recorder.errorCode, t);
 
   return (
@@ -389,6 +414,37 @@ function Desk({ onLogout }: { onLogout: () => void }) {
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <img src={LOGO_URL} alt="" width={48} height={48} className="logo-glow size-12" />
         <h1 className="flex-1 font-display text-3xl text-primary neon-text">DJ Desk</h1>
+        <div
+          className="flex rounded-full border border-border p-0.5"
+          role="group"
+          aria-label={t.settingsLanguage}
+        >
+          {(["es", "de", "en"] as Lang[]).map((l) => (
+            <button
+              key={l}
+              type="button"
+              data-testid={`dj-lang-${l}`}
+              onClick={() => {
+                setLang(l, { skipRemote: true });
+                stageCtrl.command("lang", stageCtrl.control.volume, l).catch(() => {});
+              }}
+              className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ${
+                lang === l ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          data-testid="dj-settings-btn"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Settings className="size-4" />
+          {t.settingsTitle}
+        </Button>
         <Button asChild variant="secondary">
           <Link
             to="/stage"
@@ -404,6 +460,12 @@ function Desk({ onLogout }: { onLogout: () => void }) {
           variant="secondary"
           onClick={async () => {
             await apiJson("/api/dj/logout", { method: "POST" }).catch(() => {});
+            setDjToken(null);
+            try {
+              localStorage.removeItem(DJ_ACTIVE_STORAGE_KEY);
+            } catch {
+              /* ignore */
+            }
             onLogout();
           }}
         >
@@ -508,8 +570,20 @@ function Desk({ onLogout }: { onLogout: () => void }) {
           </div>
         )}
 
+        {recorder.phase === "countdown" && (
+          <div
+            data-testid="dj-applause-precountdown"
+            className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-primary/50 bg-background/70 px-4 py-3"
+          >
+            <span className="font-semibold text-primary">{t.applauseDjCountdown}</span>
+            <span className="font-display text-3xl text-accent tabular-nums">
+              {recorder.countdownSec}s
+            </span>
+          </div>
+        )}
+
         {recorder.phase === "measuring" && (
-          <div className="mt-4 space-y-2 rounded-xl border border-accent/50 bg-background/70 p-3">
+          <div className="mt-4 space-y-2.5 rounded-xl border border-accent/50 bg-background/70 p-3">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold text-accent">{t.applauseMeasuring}</span>
               <span
@@ -519,18 +593,73 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                 {recorder.remainingSec}s
               </span>
             </div>
-            <div className="h-4 w-full overflow-hidden rounded-full bg-muted">
+            {/* Mini 32-band real-time spectrum */}
+            <div
+              className="flex h-12 items-end gap-[2px] rounded-lg border border-border/70 bg-background/95 p-1.5"
+              aria-hidden="true"
+            >
+              {(recorder.liveBands.length >= 16
+                ? recorder.liveBands.filter((_, idx) => idx % 3 !== 2).slice(0, 32)
+                : computeSpectrumColumns(
+                    recorder.liveLevel,
+                    recorder.peakLevel,
+                    Math.round(recorder.liveLevel * 100),
+                    32,
+                  )
+              ).map((val, idx) => (
+                <div
+                  key={idx}
+                  className="flex h-full flex-1 flex-col justify-end rounded-[1px] bg-muted/25"
+                >
+                  <div
+                    className={`w-full rounded-t-[1px] transition-none ${
+                      val >= 0.78 ? "bg-destructive" : val >= 0.42 ? "bg-primary" : "bg-accent"
+                    }`}
+                    style={{ height: `${Math.round(val * 1000) / 10}%` }}
+                  />
+                </div>
+              ))}
+            </div>
+            {/* 32-segment precision meter with peak marker */}
+            <div className="relative overflow-hidden rounded-lg border border-border/70 bg-background/95 p-1">
               <div
                 data-testid="dj-applause-level"
-                className="h-full bg-neon transition-all duration-75"
-                style={{ width: `${Math.round(recorder.liveLevel * 100)}%` }}
-              />
+                className="flex gap-[2px]"
+                data-level={Math.round(recorder.liveLevel * 100)}
+              >
+                {Array.from({ length: 32 }, (_, idx) => {
+                  const lit = idx < Math.round(recorder.liveLevel * 32);
+                  const cls =
+                    idx < 14 ? "bg-success" : idx < 24 ? "bg-primary" : "bg-destructive";
+                  return (
+                    <div
+                      key={idx}
+                      className={`h-3.5 flex-1 rounded-[1px] transition-none ${lit ? cls : "bg-muted/45"}`}
+                    />
+                  );
+                })}
+              </div>
+              {recorder.peakLevel > 0.02 && (
+                <div
+                  className="absolute bottom-0.5 top-0.5 w-0.5 bg-foreground"
+                  style={{ left: `${Math.min(99, Math.round(recorder.peakLevel * 1000) / 10)}%` }}
+                  aria-hidden="true"
+                />
+              )}
             </div>
             <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
               <span>
-                {t.applauseLevelLabel}: {Math.round(recorder.liveLevel * 100)}%
+                {t.applauseLevelLabel}:{" "}
+                <strong className="text-foreground">
+                  {(recorder.liveLevel * 100).toFixed(1)}%
+                </strong>
               </span>
-              <span>Peak: {Math.round(recorder.peakLevel * 100)}%</span>
+              <span>
+                {t.applausePeakShort}:{" "}
+                <strong className="text-foreground">
+                  {Math.round(recorder.peakLevel * 100)}%
+                </strong>
+              </span>
             </div>
           </div>
         )}
@@ -545,16 +674,35 @@ function Desk({ onLogout }: { onLogout: () => void }) {
         {errMsg && (
           <div
             data-testid="dj-applause-error"
-            className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
-            <span>{errMsg}</span>
-            <button
-              type="button"
-              onClick={() => recorder.clearError()}
-              className="text-xs underline"
-            >
-              {t.djClose}
-            </button>
+            <span className="min-w-0 flex-1">{errMsg}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Settings className="size-3.5" />
+                {t.settingsTitle}
+              </Button>
+              {recorder.errorCode === "iframe_blocked" && (
+                <Button asChild type="button" size="sm" variant="outline">
+                  <a href="/dj" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="size-3.5" />
+                    {t.openDjNewTab}
+                  </a>
+                </Button>
+              )}
+              <button
+                type="button"
+                onClick={() => recorder.clearError()}
+                className="text-xs underline"
+              >
+                {t.djClose}
+              </button>
+            </div>
           </div>
         )}
 
@@ -669,6 +817,17 @@ function Desk({ onLogout }: { onLogout: () => void }) {
           onEnded={() => void completeLocalStageSong(stage.id)}
         />
       )}
+
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        djBridge={{
+          externalStage,
+          onExternalStageChange: changeStage,
+          control: stageCtrl.control,
+          command: stageCtrl.command,
+        }}
+      />
     </div>
   );
 }

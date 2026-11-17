@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   STAGE_HEARTS_PER_LIKE,
+  STAGE_IDLE_QR_SIZE,
   STAGE_LIKE_QR_SIZE,
   STAGE_PARTICLES_PER_LIKE,
   STAGE_STARS_PER_LIKE,
@@ -11,8 +12,9 @@ import {
 } from "./stage";
 
 describe("stage constants and lossless like processing", () => {
-  it("enforces exact 116px QR and 40+40=80 swarm particle constants", () => {
-    expect(STAGE_LIKE_QR_SIZE).toBe(116);
+  it("enforces large low-res-beamer QR sizes (>=220px) and 40+40=80 swarm particle constants", () => {
+    expect(STAGE_LIKE_QR_SIZE).toBe(220);
+    expect(STAGE_IDLE_QR_SIZE).toBe(250);
     expect(STAGE_HEARTS_PER_LIKE).toBe(40);
     expect(STAGE_STARS_PER_LIKE).toBe(40);
     expect(STAGE_PARTICLES_PER_LIKE).toBe(80);

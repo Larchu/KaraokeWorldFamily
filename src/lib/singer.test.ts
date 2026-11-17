@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canLikePerformance,
+  computeRankDeltas,
+  getSingerKey,
   performancePoints,
   sortLeaderboard,
   type LeaderboardEntry,
@@ -21,27 +23,112 @@ describe("scoring and leaderboard helpers", () => {
     expect(performancePoints(150, 2)).toBe(120);
   });
 
-  it("applies deterministic tie-breakers cleanly", () => {
+  it("applies deterministic tie-breakers cleanly including guest entries", () => {
     const a: LeaderboardEntry = {
       singer_id: "2",
       display_name: "Bea",
       card_code: "WF-002",
+      is_guest: false,
       likes: 5,
       applause_points: 50,
       total_points: 100,
       performances: 1,
     };
     const b: LeaderboardEntry = {
-      singer_id: "1",
+      singer_id: "guest:alex",
       display_name: "Alex",
-      card_code: "WF-001",
+      card_code: "",
+      is_guest: true,
       likes: 3,
       applause_points: 70,
       total_points: 100,
       performances: 1,
     };
     // Both have 100 total_points; higher applause_points wins tie
-    expect(sortLeaderboard([a, b]).map((r) => r.singer_id)).toEqual(["1", "2"]);
+    expect(sortLeaderboard([a, b]).map((r) => r.singer_id)).toEqual(["guest:alex", "2"]);
+  });
+
+  it("builds stable singer keys for registered and unregistered guest singers", () => {
+    expect(getSingerKey({ user_id: "u-123", singer_name: "Mia" })).toBe("u-123");
+    expect(getSingerKey({ user_id: null, singer_name: "  Lukas  " })).toBe("guest:lukas");
+  });
+
+  it("computes rank deltas and new entries after round evaluation", () => {
+    const prev: LeaderboardEntry[] = [
+      {
+        singer_id: "u1",
+        display_name: "Ana",
+        card_code: "WF-001",
+        likes: 2,
+        applause_points: 60,
+        total_points: 80,
+        performances: 1,
+      },
+      {
+        singer_id: "guest:tom",
+        display_name: "Tom",
+        card_code: "",
+        is_guest: true,
+        likes: 1,
+        applause_points: 40,
+        total_points: 50,
+        performances: 1,
+      },
+    ];
+    const next: LeaderboardEntry[] = [
+      {
+        singer_id: "guest:tom",
+        display_name: "Tom",
+        card_code: "",
+        is_guest: true,
+        likes: 3,
+        applause_points: 90,
+        total_points: 120,
+        performances: 2,
+      },
+      {
+        singer_id: "u1",
+        display_name: "Ana",
+        card_code: "WF-001",
+        likes: 2,
+        applause_points: 60,
+        total_points: 80,
+        performances: 1,
+      },
+      {
+        singer_id: "guest:sara",
+        display_name: "Sara",
+        card_code: "",
+        is_guest: true,
+        likes: 0,
+        applause_points: 75,
+        total_points: 75,
+        performances: 1,
+      },
+    ];
+
+    const deltas = computeRankDeltas(prev, next);
+    expect(deltas["guest:tom"]).toEqual({
+      rank: 1,
+      previousRank: 2,
+      rankDelta: 1,
+      pointsDelta: 70,
+      isNew: false,
+    });
+    expect(deltas["u1"]).toEqual({
+      rank: 2,
+      previousRank: 1,
+      rankDelta: -1,
+      pointsDelta: 0,
+      isNew: false,
+    });
+    expect(deltas["guest:sara"]).toEqual({
+      rank: 3,
+      previousRank: null,
+      rankDelta: 0,
+      pointsDelta: 75,
+      isNew: true,
+    });
   });
 
   it("checks like eligibility", () => {

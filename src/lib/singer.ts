@@ -39,10 +39,24 @@ export interface LeaderboardEntry {
   singer_id: string;
   display_name: string;
   card_code: string;
+  is_guest?: boolean;
   likes: number;
   applause_points: number;
   total_points: number;
   performances: number;
+}
+
+export function getSingerKey(input: { user_id?: string | null; singer_name: string }): string {
+  if (input.user_id) return input.user_id;
+  return `guest:${input.singer_name.trim().toLowerCase()}`;
+}
+
+export interface RankDeltaInfo {
+  rank: number;
+  previousRank: number | null;
+  rankDelta: number;
+  pointsDelta: number;
+  isNew: boolean;
 }
 
 /**
@@ -63,4 +77,46 @@ export function sortLeaderboard(rows: LeaderboardEntry[]): LeaderboardEntry[] {
       a.display_name.localeCompare(b.display_name) ||
       a.singer_id.localeCompare(b.singer_id),
   );
+}
+
+/**
+ * Computes 1-based rank changes and point deltas between previous and next leaderboard snapshots.
+ * Positive rankDelta indicates climbing upward in the ranking (e.g. #3 -> #1 => +2).
+ */
+export function computeRankDeltas(
+  previousRows: readonly LeaderboardEntry[],
+  nextRows: readonly LeaderboardEntry[],
+): Record<string, RankDeltaInfo> {
+  const prevSorted = sortLeaderboard([...previousRows]);
+  const nextSorted = sortLeaderboard([...nextRows]);
+
+  const prevMap = new Map<string, { rank: number; points: number }>();
+  prevSorted.forEach((row, idx) => {
+    prevMap.set(row.singer_id, { rank: idx + 1, points: row.total_points });
+  });
+
+  const deltas: Record<string, RankDeltaInfo> = {};
+  nextSorted.forEach((row, idx) => {
+    const rank = idx + 1;
+    const prev = prevMap.get(row.singer_id);
+    if (!prev) {
+      deltas[row.singer_id] = {
+        rank,
+        previousRank: null,
+        rankDelta: 0,
+        pointsDelta: row.total_points,
+        isNew: true,
+      };
+      return;
+    }
+    deltas[row.singer_id] = {
+      rank,
+      previousRank: prev.rank,
+      rankDelta: prev.rank - rank,
+      pointsDelta: row.total_points - prev.points,
+      isNew: false,
+    };
+  });
+
+  return deltas;
 }

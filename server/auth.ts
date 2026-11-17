@@ -69,9 +69,19 @@ function cookieOptions(req: Request, maxAgeSeconds: number) {
     httpOnly: true,
     secure: https,
     sameSite: (https ? "none" : "lax") as "none" | "lax",
+    ...(https ? { partitioned: true } : {}),
     path: "/",
     maxAge: maxAgeSeconds * 1000,
   };
+}
+
+function extractBearerToken(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+    const token = auth.slice(7).trim();
+    return token || null;
+  }
+  return null;
 }
 
 export function isDjConfigured(): boolean {
@@ -89,7 +99,7 @@ export function checkDjPassword(input: string): { ok: boolean; reason?: "config"
   return { ok: true };
 }
 
-export async function startDjSession(db: DbClient, req: Request, res: Response): Promise<void> {
+export async function startDjSession(db: DbClient, req: Request, res: Response): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + DJ_MAX_AGE_SECONDS;
   const sid = crypto.randomUUID();
   await db.query(`INSERT INTO public.dj_sessions (id, expires_at) VALUES ($1, $2)`, [
@@ -99,23 +109,29 @@ export async function startDjSession(db: DbClient, req: Request, res: Response):
   const payload = `${exp}.${sid}`;
   const token = `${payload}.${signToken(payload)}`;
   res.cookie(DJ_COOKIE, token, cookieOptions(req, DJ_MAX_AGE_SECONDS));
+  return token;
 }
 
 export async function endDjSession(db: DbClient, req: Request, res: Response): Promise<void> {
   const cookies = parseCookies(req.headers.cookie);
-  const raw = cookies[DJ_COOKIE];
+  const raw = cookies[DJ_COOKIE] ?? extractBearerToken(req);
   if (raw) {
     const [exp, sid, sig] = raw.split(".");
     if (exp && sid && sig && safeEqual(sig, signToken(`${exp}.${sid}`))) {
       await db.query(`DELETE FROM public.dj_sessions WHERE id = $1`, [sid]);
     }
   }
-  res.clearCookie(DJ_COOKIE, { path: "/" });
+  const https = isHttpsRequest(req);
+  res.clearCookie(DJ_COOKIE, {
+    path: "/",
+    ...(https ? { secure: true, sameSite: "none" as const, partitioned: true } : {}),
+  });
 }
 
 export async function verifyDjRequest(db: DbClient, req: Request): Promise<boolean> {
   const cookies = parseCookies(req.headers.cookie);
-  const raw = cookies[DJ_COOKIE];
+  const queryToken = typeof req.query["djToken"] === "string" ? req.query["djToken"].trim() : null;
+  const raw = cookies[DJ_COOKIE] ?? extractBearerToken(req) ?? queryToken;
   if (!raw) return false;
   const parts = raw.split(".");
   if (parts.length !== 3) return false;
@@ -137,20 +153,27 @@ export async function verifyDjRequest(db: DbClient, req: Request): Promise<boole
   return result.rows.length > 0;
 }
 
-export function setSingerCookie(req: Request, res: Response, userId: string): void {
+export function setSingerCookie(req: Request, res: Response, userId: string): string {
   const exp = Math.floor(Date.now() / 1000) + SINGER_MAX_AGE_SECONDS;
   const payload = `${exp}.${userId}`;
   const token = `${payload}.${signToken(payload)}`;
   res.cookie(SINGER_COOKIE, token, cookieOptions(req, SINGER_MAX_AGE_SECONDS));
+  return token;
 }
 
-export function clearSingerCookie(res: Response): void {
-  res.clearCookie(SINGER_COOKIE, { path: "/" });
+export function clearSingerCookie(res: Response, req?: Request): void {
+  const https = req ? isHttpsRequest(req) : false;
+  res.clearCookie(SINGER_COOKIE, {
+    path: "/",
+    ...(https ? { secure: true, sameSite: "none" as const, partitioned: true } : {}),
+  });
 }
 
 export function getSingerUserId(req: Request): string | null {
   const cookies = parseCookies(req.headers.cookie);
-  const raw = cookies[SINGER_COOKIE];
+  const headerToken =
+    typeof req.headers["x-singer-token"] === "string" ? req.headers["x-singer-token"].trim() : null;
+  const raw = cookies[SINGER_COOKIE] ?? headerToken;
   if (!raw) return null;
   const parts = raw.split(".");
   if (parts.length !== 3) return null;
